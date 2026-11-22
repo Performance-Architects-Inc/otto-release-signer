@@ -16,9 +16,12 @@ import sys
 import tempfile
 from pathlib import Path
 
-import release_sig
-
 HERE = Path(__file__).resolve().parent
+# sign.yml runs `python -I sign.py`: isolated mode leaves the script's own folder off sys.path, so add it (this repo only).
+if str(HERE) not in sys.path:
+    sys.path.insert(0, str(HERE))
+
+import release_sig  # noqa: E402
 
 
 def trusted_lines(path):

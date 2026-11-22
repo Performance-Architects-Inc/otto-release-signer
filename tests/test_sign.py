@@ -36,6 +36,15 @@ class Sign(unittest.TestCase):
                        "--signers", str(signers or self.signers), "--out", str(out)])
         return out.read_text()
 
+    def test_runs_the_way_sign_yml_runs_it(self):
+        """sign.yml runs `python -I sign.py`: isolated mode, script folder not on sys.path (run 44968889349 failed so)."""
+        out = self.d / "release.sig"
+        p = subprocess.run([sys.executable, "-I", str(ROOT / "sign.py"), "--version", "0.149.1", "--commit", COMMIT,
+                            "--date", "2026-11-21", "--key", str(self.key), "--signers", str(self.signers),
+                            "--out", str(out)], cwd=self.d, capture_output=True, text=True)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn("BEGIN SSH SIGNATURE", out.read_text())
+
     def test_signs_exactly_the_statement_otto_verifies(self):
         sig = self.run_sign()
         text = release_sig.statement("0.149.1", COMMIT, "2026-11-21")

@@ -53,12 +53,13 @@ jobs:
             echo "::error::no OTTO_RELEASE_SIGNING_KEY in the release-signer environment"
             exit 1
           fi
-          python3 -m pip install -q --disable-pip-version-check "cryptography==50.0.0"
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/python" -m pip install -q --disable-pip-version-check "cryptography==50.0.0"
           install -m 700 -d "$RUNNER_TEMP/key"
           printf '%s\n' "$SIGNING_KEY" > "$RUNNER_TEMP/key/release"
           chmod 600 "$RUNNER_TEMP/key/release"
           rc=0
-          python3 -I sign.py --version "$VERSION" --commit "$COMMIT" --date "$DATE" --key "$RUNNER_TEMP/key/release" \
+          "$RUNNER_TEMP/venv/bin/python" -I sign.py --version "$VERSION" --commit "$COMMIT" --date "$DATE" --key "$RUNNER_TEMP/key/release" \
             --out "$RUNNER_TEMP/release.sig" > "$RUNNER_TEMP/signed.json" || rc=$?
           rm -rf "$RUNNER_TEMP/key"
           [ "$rc" = 0 ] || exit "$rc"
