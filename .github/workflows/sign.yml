@@ -1,0 +1,78 @@
+name: Sign an Otto release
+# Otto roadmap item 45. The release approver signs each client release by approving this job in the GitHub app (face or
+# fingerprint plus GitHub's own sign-in). The key is the secret OTTO_RELEASE_SIGNING_KEY of the environment
+# release-signer: its only required reviewer is the approver, administrators cannot bypass it, and only main may use it.
+# This repo is public because GitHub's Team plan offers required reviewers on public repositories only; it holds no
+# code of Otto's and no client data, and a public repo's secrets never reach forks or pull requests.
+#
+# The run's name shows exactly what is signed, so the approval screen shows it too. The job builds the statement from
+# the three inputs (release_sig.statement: anything else is refused), signs it, checks it against allowed_signers and
+# publishes the signature (public data) in the summary and as an artifact. Otto's release channel then takes it
+# (release-channel.yml, action sign, signature input), checks it again against Otto's releases/allowed_signers and that
+# the tag points at the signed commit, and writes it into the channel record.
+run-name: "Sign Otto v${{ inputs.version }} at ${{ inputs.commit }} (${{ inputs.date }})"
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "the release, 1.2.3 (no v)"
+        required: true
+      commit:
+        description: "the full commit the release tag points to (40 characters)"
+        required: true
+      date:
+        description: "the statement's date, YYYY-MM-DD (US Eastern)"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sign
+  cancel-in-progress: false
+
+jobs:
+  sign:
+    if: github.ref == 'refs/heads/main'
+    environment: release-signer
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5
+        with:
+          persist-credentials: false
+
+      - name: Sign the statement
+        env:
+          SIGNING_KEY: ${{ secrets.OTTO_RELEASE_SIGNING_KEY }}
+          VERSION: ${{ inputs.version }}
+          COMMIT: ${{ inputs.commit }}
+          DATE: ${{ inputs.date }}
+        run: |
+          if [ -z "$SIGNING_KEY" ]; then
+            echo "::error::no OTTO_RELEASE_SIGNING_KEY in the release-signer environment"
+            exit 1
+          fi
+          python3 -m pip install -q --disable-pip-version-check "cryptography==50.0.0"
+          install -m 700 -d "$RUNNER_TEMP/key"
+          printf '%s\n' "$SIGNING_KEY" > "$RUNNER_TEMP/key/release"
+          chmod 600 "$RUNNER_TEMP/key/release"
+          rc=0
+          python3 -I sign.py --version "$VERSION" --commit "$COMMIT" --date "$DATE" --key "$RUNNER_TEMP/key/release" \
+            --out "$RUNNER_TEMP/release.sig" > "$RUNNER_TEMP/signed.json" || rc=$?
+          rm -rf "$RUNNER_TEMP/key"
+          [ "$rc" = 0 ] || exit "$rc"
+          {
+            echo "**Signed:** Otto v$VERSION at \`$COMMIT\` ($DATE)"
+            echo
+            echo '```'
+            cat "$RUNNER_TEMP/release.sig"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          cp "$RUNNER_TEMP/release.sig" "release-$VERSION.sig"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: signature-${{ inputs.version }}
+          path: release-${{ inputs.version }}.sig
+          if-no-files-found: error
